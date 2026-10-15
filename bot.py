@@ -9,10 +9,10 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Gold Scalping Cashback Bot (M1) is active!"
+    return "Instant Scalping Cashback Bot is active!"
 
 async def trading_loop():
-    print("=== Starting Gold Scalping Cashback Bot Worker ===", flush=True)
+    print("=== Starting Instant Scalping Cashback Bot Worker ===", flush=True)
     
     token = (
         os.environ.get('METIAPI_TOKEN') or 
@@ -42,43 +42,44 @@ async def trading_loop():
         symbol = 'XAUUSD.ecn'
         volume = 0.01
         num_orders = 5
-        target_profit = 0.05  # هدف صافي الربح للمجموعة بالدولار
-        max_loss = -5.00      # حد الخسارة للمجموعة بالدولار
+        target_profit = 0.15  # 0.03$ لكل صفقة × 5 صفقات = 0.15$ مجموع الربح
+        max_loss = -5.00      # حد الخسارة للمجموعة 5$
         
-        print(f"Bot successfully initialized for {symbol}. Starting trading loop...", flush=True)
+        print(f"Bot successfully initialized for {symbol}. Monitoring positions instantly...", flush=True)
         
         while True:
             try:
-                # 1. التحقق من الصفقات المفتوحة الحالية لإدارة الأرباح والخسائر للمجموعة
+                # 1. المراقبة الفورية والمستمرة للصفقات المفتوحة (كل ثانية واحدة)
                 positions = await connection.get_positions()
                 group_positions = [p for p in positions if p.get('symbol') == symbol]
                 
                 if len(group_positions) > 0:
+                    # حساب إجمالي الربح والخسارة الصافي (الربح + العمولة + السواب)
                     total_net_profit = sum([
                         p.get('profit', 0.0) + p.get('commission', 0.0) + p.get('swap', 0.0) 
                         for p in group_positions
                     ])
                     
+                    # التحقق الفوري من تحقيق الهدف (0.15$) أو حد الخسارة (-5$)
                     if total_net_profit >= target_profit or total_net_profit <= max_loss:
-                        action_type = "TAKE PROFIT" if total_net_profit >= target_profit else "STOP LOSS"
-                        print(f"[{action_type}] Group net PnL reached: {total_net_profit:.2f}$. Closing all positions...", flush=True)
+                        action_type = "TAKE PROFIT (0.15$ reached)" if total_net_profit >= target_profit else "STOP LOSS (-5$ reached)"
+                        print(f"[{action_type}] Net PnL: {total_net_profit:.2f}$. Closing all positions instantly...", flush=True)
                         
-                        for p in group_positions:
-                            try:
-                                await connection.close_position(p.get('id'))
-                            except Exception as close_err:
-                                print(f"Error closing position: {close_err}", flush=True)
+                        # إغلاق فوازي ومتزامن لكل الصفقات لضمان عدم حدوث أي تأخير
+                        close_tasks = [connection.close_position(p.get('id')) for p in group_positions]
+                        await asyncio.gather(*close_tasks, return_exceptions=True)
                         
-                        print("Group closed. Entering cooldown...", flush=True)
-                        await asyncio.sleep(10)
+                        print("Group closed successfully. Resting for 5s...", flush=True)
+                        await asyncio.sleep(5)
                     
-                    await asyncio.sleep(2)
+                    # فحص فوري سريع جداً (كل ثانية) أثناء وجود صفقات مفتوحة
+                    await asyncio.sleep(1)
                     continue
 
-                # 2. جلب الشموع التاريخية لفريم دقيقة واحدة (M1) باستخدام حساب الـ API الصحيح
+                # 2. إذا لم تكن هناك صفقات، ابحث عن إشارة دخول جديدة على فريم M1
                 candles = await account.get_historical_candles(symbol, '1m', None, 100)
                 if not candles or len(candles) < 60:
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(5)
                     continue
                 
                 df = pd.DataFrame(candles)
@@ -104,7 +105,7 @@ async def trading_loop():
                 max_allowed_spread = 0.50
                 
                 if spread > max_allowed_spread:
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(3)
                     continue
 
                 buy_condition = (
@@ -123,39 +124,27 @@ async def trading_loop():
 
                 if buy_condition:
                     print(f"=== BUY SIGNAL DETECTED on {symbol} ===", flush=True)
-                    for i in range(num_orders):
-                        try:
-                            res = await connection.create_market_buy_order(
-                                symbol=symbol,
-                                volume=volume,
-                                stop_loss=0,
-                                take_profit=0
-                            )
-                            print(f"-> Buy Order {i+1}/{num_orders} opened.", flush=True)
-                        except Exception as ord_err:
-                            print(f"-> Failed buy order: {ord_err}", flush=True)
-                        await asyncio.sleep(0.3)
+                    buy_tasks = [
+                        connection.create_market_buy_order(symbol=symbol, volume=volume, stop_loss=0, take_profit=0)
+                        for _ in range(num_orders)
+                    ]
+                    await asyncio.gather(*buy_tasks, return_exceptions=True)
+                    print("-> All 5 Buy orders opened simultaneously.", flush=True)
                         
                 elif sell_condition:
                     print(f"=== SELL SIGNAL DETECTED on {symbol} ===", flush=True)
-                    for i in range(num_orders):
-                        try:
-                            res = await connection.create_market_sell_order(
-                                symbol=symbol,
-                                volume=volume,
-                                stop_loss=0,
-                                take_profit=0
-                            )
-                            print(f"-> Sell Order {i+1}/{num_orders} opened.", flush=True)
-                        except Exception as ord_err:
-                            print(f"-> Failed sell order: {ord_err}", flush=True)
-                        await asyncio.sleep(0.3)
+                    sell_tasks = [
+                        connection.create_market_sell_order(symbol=symbol, volume=volume, stop_loss=0, take_profit=0)
+                        for _ in range(num_orders)
+                    ]
+                    await asyncio.gather(*sell_tasks, return_exceptions=True)
+                    print("-> All 5 Sell orders opened simultaneously.", flush=True)
 
-                await asyncio.sleep(15)
+                await asyncio.sleep(5)
 
             except Exception as loop_err:
                 print(f"Error in trading loop: {loop_err}", flush=True)
-                await asyncio.sleep(10)
+                await asyncio.sleep(5)
 
     except Exception as e:
         print(f"Critical MetaApi Error: {e}", flush=True)
