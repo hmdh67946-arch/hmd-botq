@@ -1,2 +1,3 @@
 flask
 metaapi-cloud-sdk
+pandas
