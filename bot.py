@@ -7,19 +7,17 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "MT5 Trading Bot is running!"
+    return "XAUUSD Trading Bot is running!"
 
 async def main():
-    # ضع رمز التوثيق (Token) وحساب MetaApi الخاص بك هنا أو عبر متغيرات البيئة في رندر
-    token = os.environ.get('METIAPI_TOKEN', 'YOUR_TOKEN')
-    account_id = os.environ.get('METIAPI_ACCOUNT_ID', 'YOUR_ACCOUNT_ID')
+    token = os.environ.get('METIAPI_TOKEN')
+    account_id = os.environ.get('METIAPI_ACCOUNT_ID')
     
     metaapi = MetaApi(token)
     try:
         account = await metaapi.metatrader_account_api.get_account(account_id)
         print("Connected to account:", account.name)
         
-        # الانتظار حتى يصبح الحساب جاهزاً
         if account.state != 'DEPLOYED':
             await account.deploy()
         
@@ -27,18 +25,42 @@ async def main():
         await connection.connect()
         await connection.wait_synchronized()
         
-        # جلب معلومات الحساب كمثال
+        # جلب معلومات الحساب
         account_information = await connection.get_account_information()
         print("Account Balance:", account_information['balance'])
         
+        # إعدادات التداول على الذهب فقط
+        symbol = 'XAUUSD'
+        volume = 0.01
+        num_orders = 10  # فتح 10 صفقات
+        
+        # مثال: فتح صفقات شراء (Buy) - يمكنك تغييرها إلى create_market_sell_order للبيع
+        print(f"Starting to open {num_orders} Buy orders on {symbol}...")
+        
+        for i in range(num_orders):
+            try:
+                result = await connection.create_market_buy_order(
+                    symbol=symbol, 
+                    volume=volume, 
+                    stop_loss=0,  # يمكن إضافة وقف خسارة إذا أردت
+                    take_profit=0 # يمكن حساب الهدف لتعويض السبريد (0.03) + الربح المطلوب
+                )
+                print(f"Order {i+1} opened successfully: {result.get('orderId')}")
+            except Exception as ord_err:
+                print(f"Error opening order {i+1}: {ord_err}")
+            
+            # فاصل زمني قصير بين كل صفقة وأخرى لتجنب الضغط على السيرفر
+            await asyncio.sleep(0.5)
+            
+        print("All target orders processed.")
+        
     except Exception as e:
-        print("Error connecting to MetaApi:", e)
+        print("Error in trading bot:", e)
 
 def run_bot():
     asyncio.run(main())
 
 if __name__ == '__main__':
-    # تشغيل البوت في الخلفية وتشغيل سيرفر ويب لكي يقبله موقع Render
     import threading
     t = threading.Thread(target=run_bot)
     t.daemon = True
