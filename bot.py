@@ -41,8 +41,8 @@ async def trading_loop():
         symbol = 'XAUUSD.ecn'
         volume = 0.01
         num_orders = 5
-        target_profit = 0.15  # 0.03$ لكل صفقة × 5 صفقات = 0.15$
-        max_loss = -5.00      # حد الخسارة للمجموعة 5$
+        target_profit = 0.15  # 0.03$ لكل صفقة × 5 صفقات = 0.15$ مجموع الهدف
+        max_loss = -5.00      # حد الخسارة 5$
         
         last_price = None
         print(f"Bot initialized. Ready to trade price flow instantly...", flush=True)
@@ -69,7 +69,7 @@ async def trading_loop():
                     await asyncio.sleep(0.2)
                     continue
 
-                # 2. مراقبة تدفق السعر اللحظي (Price Flow) بدون شروط معقدة
+                # 2. مراقبة تدفق السعر اللحظي (Price Flow)
                 tick = await connection.get_symbol_price(symbol)
                 bid = tick.get('bid', 0)
                 ask = tick.get('ask', 0)
@@ -81,12 +81,11 @@ async def trading_loop():
                     await asyncio.sleep(0.5)
                     continue
 
-                # حساب التغير اللحظي البسيط جداً في السعر
                 price_change = current_price - last_price
                 
-                # إذا صعد السعر بمقدار نقطة واحدة فجأة -> افتح شراء
+                # صعود السعر فجأة -> شراء
                 if price_change >= 0.10:
-                    print(f"=== PRICE UP FLOW DETECTED (+{price_change:.2f}) -> BUY ===", flush=True)
+                    print(f"=== PRICE UP FLOW (+{price_change:.2f}) -> BUY ===", flush=True)
                     buy_tasks = [
                         connection.create_market_buy_order(symbol=symbol, volume=volume, stop_loss=0, take_profit=0)
                         for _ in range(num_orders)
@@ -94,9 +93,9 @@ async def trading_loop():
                     await asyncio.gather(*buy_tasks, return_exceptions=True)
                     last_price = current_price
                     
-                # إذا هبط السعر بمقدار نقطة واحدة فجأة -> افتح بيع
+                # هبوط السعر فجأة -> بيع
                 elif price_change <= -0.10:
-                    print(f"=== PRICE DOWN FLOW DETECTED ({price_change:.2f}) -> SELL ===", flush=True)
+                    print(f"=== PRICE DOWN FLOW ({price_change:.2f}) -> SELL ===", flush=True)
                     sell_tasks = [
                         connection.create_market_sell_order(symbol=symbol, volume=volume, stop_loss=0, take_profit=0)
                         for _ in range(num_orders)
@@ -104,7 +103,6 @@ async def trading_loop():
                     await asyncio.gather(*sell_tasks, return_exceptions=True)
                     last_price = current_price
 
-                # تحديث السعر الأخير باستمرار
                 last_price = current_price
                 await asyncio.sleep(0.3)
 
@@ -115,15 +113,11 @@ async def trading_loop():
     except Exception as e:
         print(f"Critical error: {e}", flush=True)
 
-def start_async_loop():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(trading_loop())
-
 if __name__ == '__main__':
-    t = threading.Thread(target=start_async_loop)
+    port = int(os.environ.get('PORT', 10000))
+    
+    t = threading.Thread(target=lambda: asyncio.run(trading_loop()))
     t.daemon = True
     t.start()
     
-    port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
