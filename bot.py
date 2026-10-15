@@ -8,36 +8,37 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "XAUUSD Trading Bot is active!"
+    return "XAUUSD Trading Bot is active and running!"
 
 async def run_trading_logic():
     print("=== Starting MetaApi Trading Worker ===", flush=True)
     
-    # قراءة التوكن من متغيرات البيئة في Render
+    # قراءة التوكن من متغيرات البيئة في Render (بأي اسم محتمل)
     token = (
         os.environ.get('METIAPI_TOKEN') or 
         os.environ.get('METAAPI_TOKEN') or 
         os.environ.get('TOKEN')
     )
     
-    # وضع الآيدي مباشرة هنا لتجنب مشاكل القراءة في Render
+    # آيدي حساب MetaApi الصحيح والثابت هنا حصرياً لتجنب أي خطأ
     account_id = '0f7c93b4-3c22-47c3-8be2-f9eaaf46a3f5'
     
     print(f"Checking credentials -> Token present: {bool(token)}, Account ID: {account_id}", flush=True)
     
     if not token:
-        print("ERROR: Token is missing in Render environment variables!", flush=True)
+        print("ERROR: MetaApi Token is missing in Render environment variables!", flush=True)
         return
 
     try:
         metaapi = MetaApi(token)
-        print(f"Connecting to account: {account_id}...", flush=True)
+        print(f"Connecting to MetaApi account: {account_id}...", flush=True)
         account = await metaapi.metatrader_account_api.get_account(account_id)
         
         if account.state != 'DEPLOYED':
             print("Deploying account on MetaApi...", flush=True)
             await account.deploy()
             
+        print("Waiting for RPC connection...", flush=True)
         connection = account.get_rpc_connection()
         await connection.connect()
         await connection.wait_synchronized()
@@ -49,7 +50,7 @@ async def run_trading_logic():
         volume = 0.01
         num_orders = 10
         
-        print(f"Executing {num_orders} Buy orders on {symbol} (0.01 lot)...", flush=True)
+        print(f"Executing {num_orders} Buy orders on {symbol} with volume {volume}...", flush=True)
         
         for i in range(num_orders):
             try:
