@@ -1,7 +1,6 @@
 import os
 import asyncio
 import threading
-import pandas as pd
 from flask import Flask
 from metaapi_cloud_sdk import MetaApi
 
@@ -9,10 +8,10 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Ultra-Fast Candle Scalping Bot is active!"
+    return "Ultra-Flexible Price Flow Scalping Bot is active!"
 
 async def trading_loop():
-    print("=== Starting Ultra-Fast Candle Scalping Bot Worker ===", flush=True)
+    print("=== Starting Ultra-Flexible Price Flow Scalper ===", flush=True)
     
     token = (
         os.environ.get('METIAPI_TOKEN') or 
@@ -42,14 +41,15 @@ async def trading_loop():
         symbol = 'XAUUSD.ecn'
         volume = 0.01
         num_orders = 5
-        target_profit = 0.15  # 0.03$ لكل صفقة × 5 صفقات = 0.15$ مجموع الربح المستهدف بالشمعة
+        target_profit = 0.15  # 0.03$ لكل صفقة × 5 صفقات = 0.15$
         max_loss = -5.00      # حد الخسارة للمجموعة 5$
         
-        print(f"Bot initialized. Ready to scalp candles for 0.15$ target...", flush=True)
+        last_price = None
+        print(f"Bot initialized. Ready to trade price flow instantly...", flush=True)
         
         while True:
             try:
-                # 1. حلقة مراقبة فائقة السرعة (كل 0.2 ثانية) للإغلاق الفوري مع حركة الشمعة
+                # 1. مراقبة الأرباح الفورية وإغلاق الصفقات بسرعة فائقة (كل 0.2 ثانية)
                 positions = await connection.get_positions()
                 group_positions = [p for p in positions if p.get('symbol') == symbol]
                 
@@ -59,82 +59,54 @@ async def trading_loop():
                         for p in group_positions
                     ])
                     
-                    # الإغلاق الفوري وبدون أي تأخير عند تحقيق الهدف (0.15$) أو حد الخسارة (-5$)
                     if total_net_profit >= target_profit or total_net_profit <= max_loss:
-                        print(f"[CANDLE TARGET HIT] Net PnL: {total_net_profit:.2f}$. Closing instantly...", flush=True)
-                        
+                        print(f"[TARGET HIT] Net PnL: {total_net_profit:.2f}$. Closing instantly...", flush=True)
                         close_tasks = [connection.close_position(p.get('id')) for p in group_positions]
                         await asyncio.gather(*close_tasks, return_exceptions=True)
-                        
-                        print("Orders closed successfully. Waiting for next candle setup...", flush=True)
+                        print("Closed successfully. Ready for next wave...", flush=True)
                         await asyncio.sleep(1)
                     
-                    # فحص سريع متكرر 5 مرات في الثانية الواحدة
                     await asyncio.sleep(0.2)
                     continue
 
-                # 2. البحث عن إشارة دخول جديدة فور اكتمال الشمعة أو بدء زخمها
-                candles = await account.get_historical_candles(symbol, '1m', None, 100)
-                if not candles or len(candles) < 60:
-                    await asyncio.sleep(2)
-                    continue
-                
-                df = pd.DataFrame(candles)
-                close = df['close']
-                
-                ema5 = close.ewm(span=5, adjust=False).mean().iloc[-1]
-                ema13 = close.ewm(span=13, adjust=False).mean().iloc[-1]
-                ema50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
-                
-                delta = close.diff()
-                gain = (delta.where(delta > 0, 0)).rolling(window=7).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(window=7).mean()
-                rs = gain / loss
-                rsi = 100 - (100 / (1 + rs))
-                current_rsi = rsi.iloc[-1]
-                
-                current_price = close.iloc[-1]
-                prev_candle_bullish = df['close'].iloc[-2] > df['open'].iloc[-2]
-                prev_candle_bearish = df['close'].iloc[-2] < df['open'].iloc[-2]
-                
+                # 2. مراقبة تدفق السعر اللحظي (Price Flow) بدون شروط معقدة
                 tick = await connection.get_symbol_price(symbol)
-                spread = tick.get('ask', 0) - tick.get('bid', 0)
+                bid = tick.get('bid', 0)
+                ask = tick.get('ask', 0)
+                current_price = (bid + ask) / 2
+                spread = ask - bid
                 
-                if spread > 0.50:
-                    await asyncio.sleep(1)
+                if spread > 0.50 or last_price is None:
+                    last_price = current_price
+                    await asyncio.sleep(0.5)
                     continue
 
-                buy_condition = (
-                    ema5 > ema13 and
-                    current_price > ema50 and
-                    current_rsi > 55 and
-                    prev_candle_bullish
-                )
-
-                sell_condition = (
-                    ema5 < ema13 and
-                    current_price < ema50 and
-                    current_rsi < 45 and
-                    prev_candle_bearish
-                )
-
-                if buy_condition:
-                    print(f"=== BUY CANDLE SIGNAL ===", flush=True)
+                # حساب التغير اللحظي البسيط جداً في السعر
+                price_change = current_price - last_price
+                
+                # إذا صعد السعر بمقدار نقطة واحدة فجأة -> افتح شراء
+                if price_change >= 0.10:
+                    print(f"=== PRICE UP FLOW DETECTED (+{price_change:.2f}) -> BUY ===", flush=True)
                     buy_tasks = [
                         connection.create_market_buy_order(symbol=symbol, volume=volume, stop_loss=0, take_profit=0)
                         for _ in range(num_orders)
                     ]
                     await asyncio.gather(*buy_tasks, return_exceptions=True)
-                        
-                elif sell_condition:
-                    print(f"=== SELL CANDLE SIGNAL ===", flush=True)
+                    last_price = current_price
+                    
+                # إذا هبط السعر بمقدار نقطة واحدة فجأة -> افتح بيع
+                elif price_change <= -0.10:
+                    print(f"=== PRICE DOWN FLOW DETECTED ({price_change:.2f}) -> SELL ===", flush=True)
                     sell_tasks = [
                         connection.create_market_sell_order(symbol=symbol, volume=volume, stop_loss=0, take_profit=0)
                         for _ in range(num_orders)
                     ]
                     await asyncio.gather(*sell_tasks, return_exceptions=True)
+                    last_price = current_price
 
-                await asyncio.sleep(1)
+                # تحديث السعر الأخير باستمرار
+                last_price = current_price
+                await asyncio.sleep(0.3)
 
             except Exception as loop_err:
                 print(f"Loop error: {loop_err}", flush=True)
