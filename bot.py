@@ -54,47 +54,40 @@ async def trading_loop():
                 group_positions = [p for p in positions if p.get('symbol') == symbol]
                 
                 if len(group_positions) > 0:
-                    # حساب صافي الربح والخسارة الشامل (الربح + العمولة + السواب إن وجد)
                     total_net_profit = sum([
                         p.get('profit', 0.0) + p.get('commission', 0.0) + p.get('swap', 0.0) 
                         for p in group_positions
                     ])
                     
-                    # فحص هدف الربح ($0.05) أو حد الخسارة (-$5.00)
                     if total_net_profit >= target_profit or total_net_profit <= max_loss:
                         action_type = "TAKE PROFIT" if total_net_profit >= target_profit else "STOP LOSS"
-                        print(f"[{action_type}] Group net PnL reached: {total_net_profit:.2f}$. Closing all {len(group_positions)} positions...", flush=True)
+                        print(f"[{action_type}] Group net PnL reached: {total_net_profit:.2f}$. Closing all positions...", flush=True)
                         
                         for p in group_positions:
                             try:
                                 await connection.close_position(p.get('id'))
                             except Exception as close_err:
-                                print(f"Error closing position {p.get('id')}: {close_err}", flush=True)
+                                print(f"Error closing position: {close_err}", flush=True)
                         
-                        print("Group closed. Entering cooldown period before next entry...", flush=True)
+                        print("Group closed. Entering cooldown...", flush=True)
                         await asyncio.sleep(10)
                     
-                    # الانتظار قليلاً قبل الفحص القادم أثناء وجود صفقات مفتوحة (مراقبة لحظية)
                     await asyncio.sleep(2)
                     continue
 
-                # 2. إذا لم تكن هناك صفقات مفتوحة، ابحث عن إشارة دخول جديدة على فريم M1
-                # جلب الشموع التاريخية لفريم دقيقة واحدة (M1)
+                # 2. البحث عن إشارة دخول جديدة على فريم M1
                 candles = await connection.get_historical_candles(symbol, '1m', 100)
                 if not candles or len(candles) < 60:
-                    print("Not enough candles data, retrying in 10s...", flush=True)
                     await asyncio.sleep(10)
                     continue
                 
                 df = pd.DataFrame(candles)
                 close = df['close']
                 
-                # حساب المؤشرات الفنية المطلوبة
                 ema5 = close.ewm(span=5, adjust=False).mean().iloc[-1]
                 ema13 = close.ewm(span=13, adjust=False).mean().iloc[-1]
                 ema50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
                 
-                # حساب مؤشر RSI بفترة 7
                 delta = close.diff()
                 gain = (delta.where(delta > 0, 0)).rolling(window=7).mean()
                 loss = (-delta.where(delta < 0, 0)).rolling(window=7).mean()
@@ -106,18 +99,14 @@ async def trading_loop():
                 prev_candle_bullish = df['close'].iloc[-2] > df['open'].iloc[-2]
                 prev_candle_bearish = df['close'].iloc[-2] < df['open'].iloc[-2]
                 
-                # التحقق من السبريد (اختياري / جلب معلومات الرمز)
-                # (يمكن التأكد من السبريد عبر تفاصيل الرمز أو قراءة الأسعار الحالية Bid/Ask)
                 tick = await connection.get_symbol_price(symbol)
                 spread = tick.get('ask', 0) - tick.get('bid', 0)
-                max_allowed_spread = 0.50 # الحد الأقصى المقبول للسبريد لتجنب التكلفة العالية
+                max_allowed_spread = 0.50
                 
                 if spread > max_allowed_spread:
-                    print(f"Spread too high ({spread}), skipping entry...", flush=True)
                     await asyncio.sleep(5)
                     continue
 
-                # --- شروط الشراء BUY ---
                 buy_condition = (
                     ema5 > ema13 and
                     current_price > ema50 and
@@ -125,7 +114,6 @@ async def trading_loop():
                     prev_candle_bullish
                 )
 
-                # --- شروط البيع SELL ---
                 sell_condition = (
                     ema5 < ema13 and
                     current_price < ema50 and
@@ -143,9 +131,9 @@ async def trading_loop():
                                 stop_loss=0,
                                 take_profit=0
                             )
-                            print(f"-> Buy Order {i+1}/{num_orders} opened. ID: {res.get('orderId')}", flush=True)
+                            print(f"-> Buy Order {i+1}/{num_orders} opened.", flush=True)
                         except Exception as ord_err:
-                            print(f"-> Failed to open buy order {i+1}: {ord_err}", flush=True)
+                            print(f"-> Failed buy order: {ord_err}", flush=True)
                         await asyncio.sleep(0.3)
                         
                 elif sell_condition:
@@ -158,16 +146,15 @@ async def trading_loop():
                                 stop_loss=0,
                                 take_profit=0
                             )
-                            print(f"-> Sell Order {i+1}/{num_orders} opened. ID: {res.get('orderId')}", flush=True)
+                            print(f"-> Sell Order {i+1}/{num_orders} opened.", flush=True)
                         except Exception as ord_err:
-                            print(f"-> Failed to open sell order {i+1}: {ord_err}", flush=True)
+                            print(f"-> Failed sell order: {ord_err}", flush=True)
                         await asyncio.sleep(0.3)
 
-                # الانتظار قليلاً قبل التحقق من شمعة أو إشارة جديدة
                 await asyncio.sleep(15)
 
-            - except Exception as loop_err:
-                print(f"Error in trading loop iteration: {loop_err}", flush=True)
+            except Exception as loop_err:
+                print(f"Error in trading loop: {loop_err}", flush=True)
                 await asyncio.sleep(10)
 
     except Exception as e:
