@@ -1,6 +1,6 @@
 import os
 import asyncio
-import sys
+import threading
 from flask import Flask
 from metaapi_cloud_sdk import MetaApi
 
@@ -8,79 +8,79 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "XAUUSD Trading Bot is active and running!"
+    return "XAUUSD Trading Bot is active!"
 
-async def main():
-    print("=== Bot execution started ===", flush=True)
+async def run_trading_logic():
+    print("=== Starting MetaApi Trading Worker ===", flush=True)
     
-    # البحث عن التوكن بأكثر من اسم محتمل لتجنب أي خطأ في الإملاء
+    # قراءة التوكن والآيدي بكافة المسميات المحتملة
     token = (
         os.environ.get('METIAPI_TOKEN') or 
         os.environ.get('METAAPI_TOKEN') or 
         os.environ.get('TOKEN')
     )
     
-    # البحث عن الآيدي بأكثر من اسم محتمل
     account_id = (
         os.environ.get('METIAPI_ACCOUNT_ID') or 
         os.environ.get('METAAPI_ACCOUNT_ID') or 
         os.environ.get('ACCOUNT_ID')
     )
     
+    print(f"Checking credentials -> Token present: {bool(token)}, Account ID present: {bool(account_id)}", flush=True)
+    
     if not token or not account_id:
-        print(f"ERROR: Token or Account ID is missing! (Token found: {bool(token)}, Account ID found: {bool(account_id)})", flush=True)
+        print("ERROR: Environment variables for Token or Account ID are missing! Retrying in 10s...", flush=True)
         return
 
-    metaapi = MetaApi(token)
     try:
-        print(f"Connecting to MetaApi account ID: {account_id}", flush=True)
+        metaapi = MetaApi(token)
+        print(f"Connecting to account: {account_id}...", flush=True)
         account = await metaapi.metatrader_account_api.get_account(account_id)
-        print("Connected to account successfully:", account.name, flush=True)
         
         if account.state != 'DEPLOYED':
-            print("Deploying account...", flush=True)
+            print("Deploying account on MetaApi...", flush=True)
             await account.deploy()
             
-        print("Waiting for RPC connection...", flush=True)
         connection = account.get_rpc_connection()
         await connection.connect()
         await connection.wait_synchronized()
         
-        # جلب معلومات الحساب والتأكد من الرصيد
-        account_information = await connection.get_account_information()
-        print(f"Account Balance: {account_information.get('balance')}", flush=True)
+        account_info = await connection.get_account_information()
+        print(f"Successfully connected! Account Balance: {account_info.get('balance')}", flush=True)
         
         symbol = 'XAUUSD'
         volume = 0.01
         num_orders = 10
         
-        print(f"Starting to open {num_orders} Buy orders on {symbol} with volume {volume}...", flush=True)
+        print(f"Executing {num_orders} Buy orders on {symbol} (0.01 lot)...", flush=True)
         
         for i in range(num_orders):
             try:
-                result = await connection.create_market_buy_order(
-                    symbol=symbol, 
-                    volume=volume, 
-                    stop_loss=0, 
+                res = await connection.create_market_buy_order(
+                    symbol=symbol,
+                    volume=volume,
+                    stop_loss=0,
                     take_profit=0
                 )
-                print(f"-> Order {i+1} opened successfully. Result ID: {result.get('orderId')}", flush=True)
-            except Exception as ord_err:
-                print(f"-> ERROR opening order {i+1}: {ord_err}", flush=True)
+                print(f"-> Order {i+1}/{num_orders} opened successfully! Order ID: {res.get('orderId')}", flush=True)
+            except Exception as ord_e:
+                print(f"-> Failed to open order {i+1}: {ord_e}", flush=True)
             
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.4)
             
-        print("=== All orders batch processed ===", flush=True)
-        
-    except Exception as e:
-        print(f"CRITICAL ERROR in trading bot main loop: {e}", flush=True)
+        print("=== All 10 orders executed successfully ===", flush=True)
 
-def run_bot():
-    asyncio.run(main())
+    except Exception as e:
+        print(f"MetaApi Connection Error: {e}", flush=True)
+
+def start_async_loop():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(run_trading_logic())
 
 if __name__ == '__main__':
-    import threading
-    t = threading.Thread(target=run_bot)
+    # تشغيل منطق التداول في Thread منفصل لضمان عدم توقفه
+    t = threading.Thread(target=start_async_loop)
     t.daemon = True
     t.start()
     
