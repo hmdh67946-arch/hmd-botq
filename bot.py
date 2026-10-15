@@ -1,6 +1,7 @@
 import os
 import asyncio
 import threading
+import pandas as pd
 from flask import Flask
 from metaapi_cloud_sdk import MetaApi
 
@@ -8,20 +9,17 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "XAUUSD.ecn Trading Bot is active and running!"
+    return "Gold Scalping Cashback Bot (M1) is active!"
 
-async def run_trading_logic():
-    print("=== Starting MetaApi Trading Worker ===", flush=True)
+async def trading_loop():
+    print("=== Starting Gold Scalping Cashback Bot Worker ===", flush=True)
     
     token = (
         os.environ.get('METIAPI_TOKEN') or 
         os.environ.get('METAAPI_TOKEN') or 
         os.environ.get('TOKEN')
     )
-    
     account_id = '0f7c93b4-3c22-47c3-8be2-f9eaaf46a3f5'
-    
-    print(f"Checking credentials -> Token present: {bool(token)}, Account ID: {account_id}", flush=True)
     
     if not token:
         print("ERROR: MetaApi Token is missing!", flush=True)
@@ -41,39 +39,144 @@ async def run_trading_logic():
         await connection.connect()
         await connection.wait_synchronized()
         
-        account_info = await connection.get_account_information()
-        print(f"Successfully connected! Account Balance: {account_info.get('balance')}", flush=True)
-        
-        # استخدام رمز الذهب الصحيح الخاص بحسابك
         symbol = 'XAUUSD.ecn'
         volume = 0.01
-        num_orders = 10
+        num_orders = 5
+        target_profit = 0.05  # هدف صافي الربح للمجموعة بالدولار
+        max_loss = -5.00      # حد الخسارة للمجموعة بالدولار
         
-        print(f"Executing {num_orders} Buy orders on {symbol} with volume {volume}...", flush=True)
+        print(f"Bot successfully initialized for {symbol}. Starting trading loop...", flush=True)
         
-        for i in range(num_orders):
+        while True:
             try:
-                res = await connection.create_market_buy_order(
-                    symbol=symbol,
-                    volume=volume,
-                    stop_loss=0,
-                    take_profit=0
+                # 1. التحقق من الصفقات المفتوحة الحالية (إدارة الأرباح والخسائر للمجموعة)
+                positions = await connection.get_positions()
+                group_positions = [p for p in positions if p.get('symbol') == symbol]
+                
+                if len(group_positions) > 0:
+                    # حساب صافي الربح والخسارة الشامل (الربح + العمولة + السواب إن وجد)
+                    total_net_profit = sum([
+                        p.get('profit', 0.0) + p.get('commission', 0.0) + p.get('swap', 0.0) 
+                        for p in group_positions
+                    ])
+                    
+                    # فحص هدف الربح ($0.05) أو حد الخسارة (-$5.00)
+                    if total_net_profit >= target_profit or total_net_profit <= max_loss:
+                        action_type = "TAKE PROFIT" if total_net_profit >= target_profit else "STOP LOSS"
+                        print(f"[{action_type}] Group net PnL reached: {total_net_profit:.2f}$. Closing all {len(group_positions)} positions...", flush=True)
+                        
+                        for p in group_positions:
+                            try:
+                                await connection.close_position(p.get('id'))
+                            except Exception as close_err:
+                                print(f"Error closing position {p.get('id')}: {close_err}", flush=True)
+                        
+                        print("Group closed. Entering cooldown period before next entry...", flush=True)
+                        await asyncio.sleep(10)
+                    
+                    # الانتظار قليلاً قبل الفحص القادم أثناء وجود صفقات مفتوحة (مراقبة لحظية)
+                    await asyncio.sleep(2)
+                    continue
+
+                # 2. إذا لم تكن هناك صفقات مفتوحة، ابحث عن إشارة دخول جديدة على فريم M1
+                # جلب الشموع التاريخية لفريم دقيقة واحدة (M1)
+                candles = await connection.get_historical_candles(symbol, '1m', 100)
+                if not candles or len(candles) < 60:
+                    print("Not enough candles data, retrying in 10s...", flush=True)
+                    await asyncio.sleep(10)
+                    continue
+                
+                df = pd.DataFrame(candles)
+                close = df['close']
+                
+                # حساب المؤشرات الفنية المطلوبة
+                ema5 = close.ewm(span=5, adjust=False).mean().iloc[-1]
+                ema13 = close.ewm(span=13, adjust=False).mean().iloc[-1]
+                ema50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
+                
+                # حساب مؤشر RSI بفترة 7
+                delta = close.diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=7).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=7).mean()
+                rs = gain / loss
+                rsi = 100 - (100 / (1 + rs))
+                current_rsi = rsi.iloc[-1]
+                
+                current_price = close.iloc[-1]
+                prev_candle_bullish = df['close'].iloc[-2] > df['open'].iloc[-2]
+                prev_candle_bearish = df['close'].iloc[-2] < df['open'].iloc[-2]
+                
+                # التحقق من السبريد (اختياري / جلب معلومات الرمز)
+                # (يمكن التأكد من السبريد عبر تفاصيل الرمز أو قراءة الأسعار الحالية Bid/Ask)
+                tick = await connection.get_symbol_price(symbol)
+                spread = tick.get('ask', 0) - tick.get('bid', 0)
+                max_allowed_spread = 0.50 # الحد الأقصى المقبول للسبريد لتجنب التكلفة العالية
+                
+                if spread > max_allowed_spread:
+                    print(f"Spread too high ({spread}), skipping entry...", flush=True)
+                    await asyncio.sleep(5)
+                    continue
+
+                # --- شروط الشراء BUY ---
+                buy_condition = (
+                    ema5 > ema13 and
+                    current_price > ema50 and
+                    current_rsi > 55 and
+                    prev_candle_bullish
                 )
-                print(f"-> Order {i+1}/{num_orders} opened successfully! Order ID: {res.get('orderId')}", flush=True)
-            except Exception as ord_e:
-                print(f"-> Failed to open order {i+1}: {ord_e}", flush=True)
-            
-            await asyncio.sleep(0.4)
-            
-        print("=== All 10 orders executed successfully on XAUUSD.ecn ===", flush=True)
+
+                # --- شروط البيع SELL ---
+                sell_condition = (
+                    ema5 < ema13 and
+                    current_price < ema50 and
+                    current_rsi < 45 and
+                    prev_candle_bearish
+                )
+
+                if buy_condition:
+                    print(f"=== BUY SIGNAL DETECTED on {symbol} ===", flush=True)
+                    for i in range(num_orders):
+                        try:
+                            res = await connection.create_market_buy_order(
+                                symbol=symbol,
+                                volume=volume,
+                                stop_loss=0,
+                                take_profit=0
+                            )
+                            print(f"-> Buy Order {i+1}/{num_orders} opened. ID: {res.get('orderId')}", flush=True)
+                        except Exception as ord_err:
+                            print(f"-> Failed to open buy order {i+1}: {ord_err}", flush=True)
+                        await asyncio.sleep(0.3)
+                        
+                elif sell_condition:
+                    print(f"=== SELL SIGNAL DETECTED on {symbol} ===", flush=True)
+                    for i in range(num_orders):
+                        try:
+                            res = await connection.create_market_sell_order(
+                                symbol=symbol,
+                                volume=volume,
+                                stop_loss=0,
+                                take_profit=0
+                            )
+                            print(f"-> Sell Order {i+1}/{num_orders} opened. ID: {res.get('orderId')}", flush=True)
+                        except Exception as ord_err:
+                            print(f"-> Failed to open sell order {i+1}: {ord_err}", flush=True)
+                        await asyncio.sleep(0.3)
+
+                # الانتظار قليلاً قبل التحقق من شمعة أو إشارة جديدة
+                await asyncio.sleep(15)
+
+            - except Exception as loop_err:
+                print(f"Error in trading loop iteration: {loop_err}", flush=True)
+                await asyncio.sleep(10)
 
     except Exception as e:
-        print(f"MetaApi Error: {e}", flush=True)
+        print(f"Critical MetaApi Error: {e}", flush=True)
 
 def start_async_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(run_trading_logic())
+    loop.run_until_complete(trading_loop())
 
 if __name__ == '__main__':
     t = threading.Thread(target=start_async_loop)
