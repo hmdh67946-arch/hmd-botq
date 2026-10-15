@@ -19,7 +19,8 @@ async def trading_loop():
         os.environ.get('METAAPI_TOKEN') or 
         os.environ.get('TOKEN')
     )
-    account_id = '0f7c93b4-3c22-47c3-8be2-f9eaaf46a3f5'
+    # تم تحديث الـ Account ID ليطابق التوكن الجديد الذي أرسلته بدقة
+    account_id = '7b045775-a813-4c07-ae98-9d1945aefe1c'
     
     if not token:
         print("ERROR: MetaApi Token is missing!", flush=True)
@@ -52,7 +53,7 @@ async def trading_loop():
             try:
                 # 1. مراقبة فائقة السرعة للأرباح (كل 0.1 ثانية) للإغلاق الفوري
                 positions = await connection.get_positions()
-                group_positions = [p for p in positions if p.get('symbol') == symbol]
+                group_positions = [p for p in positions if p.get('symbol'] == symbol]
                 
                 if len(group_positions) > 0:
                     total_net_profit = sum([
