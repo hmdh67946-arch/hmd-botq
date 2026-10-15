@@ -39,20 +39,20 @@ async def trading_loop():
         await connection.connect()
         await connection.wait_synchronized()
         
-        symbol = 'XAUUSD.ecn'
+        symbol = 'XAUUSD.m'
         volume = 0.01
         num_orders = 5
         target_profit = 0.15  # 0.03$ لكل صفقة × 5 صفقات = 0.15$ الهدف الإجمالي
         max_loss = -5.00      # حد الخسارة للمجموعة 5$
         
         last_price = None
-        print(f"Bot initialized for M3. Lightning-fast mode activated...", flush=True)
+        print(f"Bot initialized for M3 with symbol {symbol}. Lightning-fast mode activated...", flush=True)
         
         while True:
             try:
-                # 1. مراقبة فائقة السرعة للأرباح (كل 0.1 ثانية - 10 مرات في الثانية) للإغلاق الفوري
+                # 1. مراقبة فائقة السرعة للأرباح (كل 0.1 ثانية) للإغلاق الفوري
                 positions = await connection.get_positions()
-                group_positions = [p for p in positions if p.get('symbol'] == symbol]
+                group_positions = [p for p in positions if p.get('symbol') == symbol]
                 
                 if len(group_positions) > 0:
                     total_net_profit = sum([
@@ -62,7 +62,6 @@ async def trading_loop():
                     
                     if total_net_profit >= target_profit or total_net_profit <= max_loss:
                         print(f"[LIGHTNING CLOSE] Net PnL: {total_net_profit:.2f}$. Closing all 5 orders simultaneously...", flush=True)
-                        # إغلاق تزامني بحت لكل الصفقات معاً وبدون أي تأخير
                         close_tasks = [connection.close_position(p.get('id')) for p in group_positions]
                         await asyncio.gather(*close_tasks, return_exceptions=True)
                         print("Orders closed instantly. Ready for next wave...", flush=True)
@@ -96,13 +95,11 @@ async def trading_loop():
 
                 price_change = current_price - last_price
                 
-                # شروط الدخول السريعة على M3 مع تدفق السعر
                 buy_condition = (ema5 > ema13) and (price_change >= 0.06)
                 sell_condition = (ema5 < ema13) and (price_change <= -0.06)
 
                 if buy_condition:
                     print(f"=== LIGHTNING BUY SIGNAL -> OPENING 5 ORDERS TOGETHER ===", flush=True)
-                    # فتح الـ 5 صفقات معاً في نفس اللحظة بأقصى سرعة برمجية
                     buy_tasks = [
                         connection.create_market_buy_order(symbol=symbol, volume=volume, stop_loss=0, take_profit=0)
                         for _ in range(num_orders)
