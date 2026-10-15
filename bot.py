@@ -12,11 +12,23 @@ def home():
 
 async def main():
     print("=== Bot execution started ===", flush=True)
-    token = os.environ.get('METIAPI_TOKEN')
-    account_id = os.environ.get('METIAPI_ACCOUNT_ID')
+    
+    # البحث عن التوكن بأكثر من اسم محتمل لتجنب أي خطأ في الإملاء
+    token = (
+        os.environ.get('METIAPI_TOKEN') or 
+        os.environ.get('METAAPI_TOKEN') or 
+        os.environ.get('TOKEN')
+    )
+    
+    # البحث عن الآيدي بأكثر من اسم محتمل
+    account_id = (
+        os.environ.get('METIAPI_ACCOUNT_ID') or 
+        os.environ.get('METAAPI_ACCOUNT_ID') or 
+        os.environ.get('ACCOUNT_ID')
+    )
     
     if not token or not account_id:
-        print("ERROR: METIAPI_TOKEN or METIAPI_ACCOUNT_ID is missing!", flush=True)
+        print(f"ERROR: Token or Account ID is missing! (Token found: {bool(token)}, Account ID found: {bool(account_id)})", flush=True)
         return
 
     metaapi = MetaApi(token)
@@ -34,7 +46,7 @@ async def main():
         await connection.connect()
         await connection.wait_synchronized()
         
-        # جلب معلومات الحساب
+        # جلب معلومات الحساب والتأكد من الرصيد
         account_information = await connection.get_account_information()
         print(f"Account Balance: {account_information.get('balance')}", flush=True)
         
@@ -42,7 +54,6 @@ async def main():
         volume = 0.01
         num_orders = 10
         
-        # يمكنك تغييرها إلى create_market_sell_order لو أردت بيع
         print(f"Starting to open {num_orders} Buy orders on {symbol} with volume {volume}...", flush=True)
         
         for i in range(num_orders):
