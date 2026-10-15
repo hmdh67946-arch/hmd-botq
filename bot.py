@@ -49,7 +49,7 @@ async def trading_loop():
         
         while True:
             try:
-                # 1. التحقق من الصفقات المفتوحة الحالية (إدارة الأرباح والخسائر للمجموعة)
+                # 1. التحقق من الصفقات المفتوحة الحالية لإدارة الأرباح والخسائر للمجموعة
                 positions = await connection.get_positions()
                 group_positions = [p for p in positions if p.get('symbol') == symbol]
                 
@@ -75,8 +75,8 @@ async def trading_loop():
                     await asyncio.sleep(2)
                     continue
 
-                # 2. البحث عن إشارة دخول جديدة على فريم M1
-                candles = await connection.get_historical_candles(symbol, '1m', 100)
+                # 2. جلب الشموع التاريخية لفريم دقيقة واحدة (M1) باستخدام حساب الـ API الصحيح
+                candles = await account.get_historical_candles(symbol, '1m', None, 100)
                 if not candles or len(candles) < 60:
                     await asyncio.sleep(10)
                     continue
