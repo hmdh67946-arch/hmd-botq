@@ -13,23 +13,38 @@ def home():
 async def run_trading_logic():
     print("=== Starting MetaApi Trading Worker ===", flush=True)
     
-    # قراءة التوكن والآيدي بكافة المسميات المحتملة
+    # طباعة جميع أسماء المتغيرات الموجودة في السيرفر لنرى الاسم الصحيح بالضبط
+    print(f"All available environment keys: {list(os.environ.keys())}", flush=True)
+    
+    # البحث عن التوكن
     token = (
         os.environ.get('METIAPI_TOKEN') or 
         os.environ.get('METAAPI_TOKEN') or 
-        os.environ.get('TOKEN')
+        os.environ.get('TOKEN') or
+        os.environ.get('METI_TOKEN')
     )
     
-    account_id = (
-        os.environ.get('METIAPI_ACCOUNT_ID') or 
-        os.environ.get('METAAPI_ACCOUNT_ID') or 
-        os.environ.get('ACCOUNT_ID')
-    )
+    # البحث عن الآيدي بأكبر عدد ممكن من الاحتمالات أو البحث عن أي متغير يحتوي كلمة account أو id
+    account_id = None
+    for key, value in os.environ.items():
+        if 'account' in key.lower() or 'id' in key.lower():
+            if len(str(value)) > 20: # عادة آيدي ميتاآبي طويل
+                account_id = value
+                print(f"Found potential account ID in variable '{key}': {value}", flush=True)
+                break
+                
+    if not account_id:
+        account_id = (
+            os.environ.get('METIAPI_ACCOUNT_ID') or 
+            os.environ.get('METAAPI_ACCOUNT_ID') or 
+            os.environ.get('ACCOUNT_ID') or
+            os.environ.get('ID')
+        )
     
     print(f"Checking credentials -> Token present: {bool(token)}, Account ID present: {bool(account_id)}", flush=True)
     
     if not token or not account_id:
-        print("ERROR: Environment variables for Token or Account ID are missing! Retrying in 10s...", flush=True)
+        print("ERROR: Environment variables for Token or Account ID are still missing!", flush=True)
         return
 
     try:
@@ -79,7 +94,6 @@ def start_async_loop():
     loop.run_until_complete(run_trading_logic())
 
 if __name__ == '__main__':
-    # تشغيل منطق التداول في Thread منفصل لضمان عدم توقفه
     t = threading.Thread(target=start_async_loop)
     t.daemon = True
     t.start()
