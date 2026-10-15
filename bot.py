@@ -14,9 +14,16 @@ def home():
 async def trading_loop():
     print("=== Starting M3 Scalper Worker ===", flush=True)
     
-    # تثبيت التوكن ورقم الحساب مباشرة داخل الكود لضمان عدم حدوث أي خطأ
-    token = "eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiJiOTIzZTc1NmFiOWViMTFkMWZlZmM2MzY1NjQzYThhOCIsImFjY2Vzc1J1bGVzIjpbeyJpZCI6InRyYWRpbmctYWNjb3VudC1tYW5hZ2VtZW50LWFwaSIsIm1ldGhvZHMiOlsidHJhZGluZy1hY2NvdW50LW1hbmFnZW1lbnQtYXBpOnJlc3Q6cHVibGljOio6KiJdLCJyb2xlcyI6WyJyZWFkZXIiXSwicmVzb3VyY2VzIjpbImFjY291bnQ6JFVTRVJfSUQkOjdiMDQ1Nzc1LWE4MTMtNGMwNy1hZTk4LTlkMTk0NWFlZmUxYyJdfSx7ImlkIjoibWV0YWFwaS1yZXN0LWFwaSIsIm1ldGhvZHMiOlsibWV0YWFwaS1hcGk6cmVzdDpwdWJsaWM6KjoqIl0sInJvbGVzIjpbInJlYWRlciIsIndyaXRlciJdLCJlc291cmNlcyI6WyJhY2NvdW50OiRVU0VSX0lEJDo3YjA0NTc3NS1hODEzLTRjMDctYWU5OC05ZDE5NDVhZWZlMWMiXX0seyJpZCI6Im1ldGFhcGktcnBjLWFwaSIsIm1ldGhvZHMiOlsibWV0YWFwaS1hcGk6ndzOnB1YmxpYzoqOioiXSwicm9sZXMiOlsicmVhZGVyIiwid3JpdGVyIl0sInJlc2VyY2VzIjpbImFjY291bnQ6JFVTRVJfSUQkOjdiMDQ1Nzc1LWE4MTMtNGMwNy1hZTk4LTlkMTk0NWFlZmUxYyJdfSx7ImlkIjoibWV0YWFwaS1yZWFsLXRpbWUtc3RyZWFtaW5nLWFwaSIsIm1ldGhvZHMiOlsibWV0YWFwaS1hcGk6ndzOnB1YmxpYzoqOioiXSwicm9sZXMiOlsicmVhZGVyIiwid3JpdGVyIl0sInJlc2VyY2VzIjpbImFjY291bnQ6JFVTRVJfSUQkOjdiMDQ1Nzc1LWE4MTMtNGMwNy1hZTk4LTlkMTk0NWFlZmUxYyJdfSx7ImlkIjoibWV0YXN0YXRzLWFwaSIsIm1ldGhvZHMiOlsibWV0YXN0YXRzLWFwaTpyZXN0pwdWJsaWM6KjoqIl0sInJvbGVzIjpbInJlYWRlciJdLCJlc291cmNlcyI6WyJhY2NvdW50OiRVU0VSX0lEJDo3YjA0NTc3NS1hODEzLTRjMDctYWU5OC05ZDE5NDVhZWZlMWMiXX0seyJpZCI6InJpc2stbWFuYWdlbWVudC1hcGkiLCJtZXRob2RzIjpbInJpc2stbWFuYWdlbWVudC1hcGk6cmVzdDpwdWJsaWM6KjoqIl0sInJvbGVzIjpbInJlYWRlciJdLCJyZXNvdXJjZXMiOlsiYWNjb3VudDokVVNFUl9JRCQ6N2IwNDU3NzUtYTgxMy00YzA3LWFlOTgtOWQxOTQ1YWVmZTFjIl19XSwiaWdub3JlUmF0ZUxpbWl0cyI6ZmFsc2UsInRva2VuSWQiOiIyMDIxMDIxMyIsImltcGVyc29uYXRlZCI6ZmFsc2UsInJlYWxVc2VySWQiOiJiOTIzZTc1NmFiOWViMTFkMWZlZmM2MzY1NjQzYThhOCIsImlhdCI6MTc5MjEwNjMyNCwiZXhwIjoxNzk5ODgyMzI0f.gvzgJ5sPHBF6KW1AG-Owa-_h2zFGwryeavhjqy9Tk5_1D-uTD5ev1MBmV7PE9m6naccNKyVzyRlfLXGajAz6PVbbwNmRKUu2947v6eRjV3tsP8D2LvRwJ-sZZ-DDEl_CULnI6QYNU1O-4de42soC0QVpiEMoeWIRYlNpgxC4tG6Dz-vLCHJ9-9IgtO5G3TbBoDvek8zH8AaXVWyOhM4fpJ4ZvpBRq_3Mu6kAy6vyVWzrdlJiPjeTv15R7_Tg7LtsNuL8IeutFEwoFl5PfHmv9FmZO0f4ipiX3AaPiITHdLja7r_znhoqj3eSx1tpzxS9E_XMawRj0eo_CrFKyNBHRKn6wg2vu1arQMDIhXQy6LWwF3gScTyQUb1mxFERrXFiIwraEEKL4j_WwgPYfGoLqUfhxwZFFz42kZSRKGm218NwsKzDPKL5umhM3gJ8S7hJu26qboN7UmBs1f8mGjf_9b3Dt291xeLsel8gz_2aX80uCZEgvfEgtGFIQV9YTJ7SGhi3oQTFk0SKsa06fxEWEVFhNhTO9_FC6z8ZXOc1h2MuABgZ_gaLl9Sn4h1DreQLmNyYWuK1JC9OPF7uvp3aFnzvrcJMLcrU6zBL3a8poJhq4xgStsi0kAv4gESYWMELtz70qnenSAYgLAJdXr5IdGuA6cASc6qRyNnqoBAx-5o"
+    token = (
+        os.environ.get('METIAPI_TOKEN') or 
+        os.environ.get('METAAPI_TOKEN') or 
+        os.environ.get('TOKEN')
+    )
     account_id = '7b045775-a813-4c07-ae98-9d1945aefe1c'
+    
+    if not token:
+        print("ERROR: MetaApi Token is missing in Environment Variables!", flush=True)
+        return
 
     try:
         metaapi = MetaApi(token)
@@ -44,7 +51,7 @@ async def trading_loop():
         while True:
             try:
                 positions = await connection.get_positions()
-                group_positions = [p for p in positions if p.get('symbol'] == symbol]
+                group_positions = [p for p in positions if p.get('symbol') == symbol]
                 
                 if len(group_positions) > 0:
                     total_net_profit = sum([
@@ -124,7 +131,6 @@ def start_async_loop():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     
-    # تشغيل حلقة المهام بشكل آمن لمنع خطأ status 1
     t = threading.Thread(target=start_async_loop)
     t.daemon = True
     t.start()
