@@ -9,10 +9,10 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Ultra-Fast Streaming M3 Scalper is active!"
+    return "Ultra-Fast M3 Scalper is active!"
 
 async def trading_loop():
-    print("=== Starting Ultra-Fast Streaming M3 Scalper ===", flush=True)
+    print("=== Starting Ultra-Fast M3 Scalper ===", flush=True)
     
     token = (
         os.environ.get('METIAPI_TOKEN') or 
@@ -39,39 +39,33 @@ async def trading_loop():
         await connection.connect()
         await connection.wait_synchronized()
         
-        # تفعيل البث المباشر السريع (Streaming API) لمتابعة الأسعار والصفقات لحظياً وبدون تأخير
-        streaming_connection = account.get_streaming_connection()
-        await streaming_connection.connect()
-        
         symbol = 'XAUUSD.m'
         volume = 0.01
         num_orders = 5
-        target_profit = 0.15  # 0.03$ لكل صفقة × 5 = 0.15$
-        max_loss = -4.80      # حد الخسارة الصارم ضمن نطاق 4.5$ إلى 5.10$
+        target_profit = 0.15  # إجمالي هدف الربح (0.03$ إلى 0.05$ لكل صفقة)
+        max_loss = -4.80      # حد الخسارة الصارم
         
-        print(f"Bot fully synchronized with Streaming for {symbol}. Ready for instant execution...", flush=True)
+        print(f"Bot fully initialized for {symbol}. Ready for lightning-fast execution...", flush=True)
         
         while True:
             try:
-                # مراقبة الصفقات المفتوحة باستخدام البث المباشر اللحظي
-                positions = streaming_connection.get_positions()
+                # استخدام اتصال RPC السريع لجلب ومراقبة الصفقات لحظياً
+                positions = await connection.get_positions()
                 group_positions = [p for p in positions if p.get('symbol') == symbol]
                 
                 if len(group_positions) > 0:
-                    # حساب الربح الصافي لحظياً بالمللي ثانية
                     total_net_profit = sum([
                         p.get('profit', 0.0) + p.get('commission', 0.0) + p.get('swap', 0.0) 
                         for p in group_positions
                     ])
                     
-                    # الإغلاق الفوري الصارم عند الهدف أو الخسارة المحددة بدقة
+                    # الإغلاق الفوري السريع عند الهدف أو الخسارة
                     if total_net_profit >= target_profit or total_net_profit <= max_loss:
-                        print(f"[INSTANT STREAM CLOSE] PnL: {total_net_profit:.2f}$. Closing all orders instantly...", flush=True)
+                        print(f"[INSTANT CLOSE] PnL: {total_net_profit:.2f}$. Closing all orders instantly...", flush=True)
                         close_tasks = [connection.close_position(p.get('id')) for p in group_positions]
                         await asyncio.gather(*close_tasks, return_exceptions=True)
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(0.5)
                     
-                    # حلقة ميكروثانية سريعة جداً للمراقبة
                     await asyncio.sleep(0.05)
                     continue
 
@@ -86,8 +80,7 @@ async def trading_loop():
                 ema5 = close.ewm(span=5, adjust=False).mean().iloc[-1]
                 ema13 = close.ewm(span=13, adjust=False).mean().iloc[-1]
                 
-                # جلب السعر اللحظي من تدفق البث
-                tick = streaming_connection.get_symbol_price(symbol)
+                tick = await connection.get_symbol_price(symbol)
                 if not tick:
                     await asyncio.sleep(0.2)
                     continue
@@ -96,12 +89,11 @@ async def trading_loop():
                 ask = tick.get('ask', 0)
                 current_price = (bid + ask) / 2
                 
-                # شروط الدخول السريعة على فريم M3
                 buy_condition = (ema5 > ema13)
                 sell_condition = (ema5 < ema13)
 
                 if buy_condition:
-                    print(f"=== INSTANT STREAM BUY SIGNAL -> OPENING 5 ORDERS ===", flush=True)
+                    print(f"=== BUY SIGNAL -> OPENING 5 ORDERS ===", flush=True)
                     buy_tasks = [
                         connection.create_market_buy_order(symbol=symbol, volume=volume, stop_loss=0, take_profit=0)
                         for _ in range(num_orders)
@@ -109,21 +101,21 @@ async def trading_loop():
                     await asyncio.gather(*buy_tasks, return_exceptions=True)
                     
                 elif sell_condition:
-                    print(f"=== INSTANT STREAM SELL SIGNAL -> OPENING 5 ORDERS ===", flush=True)
+                    print(f"=== SELL SIGNAL -> OPENING 5 ORDERS ===", flush=True)
                     sell_tasks = [
                         connection.create_market_sell_order(symbol=symbol, volume=volume, stop_loss=0, take_profit=0)
                         for _ in range(num_orders)
                     ]
                     await asyncio.gather(*sell_tasks, return_exceptions=True)
 
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.2)
 
             except Exception as loop_err:
-                print(f"Streaming Loop error: {loop_err}", flush=True)
+                print(f"Loop error: {loop_err}", flush=True)
                 await asyncio.sleep(0.5)
 
     except Exception as e:
-        print(f"Critical Streaming error: {e}", flush=True)
+        print(f"Critical error: {e}", flush=True)
 
 def start_async_loop():
     loop = asyncio.new_event_loop()
