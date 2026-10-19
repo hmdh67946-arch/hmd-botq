@@ -9,10 +9,55 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "OB V6 Accurate Bot is running safely!"
+    return "OB V6 Exact Logic Bot is active!"
+
+def get_order_blocks(df, pivot_len=5):
+    bullish_obs = []
+    bearish_obs = []
+    n = len(df)
+    
+    for i in range(pivot_len, n - pivot_len):
+        # فحص القاع المحوري (Bullish OB)
+        is_pivot_low = True
+        for j in range(1, pivot_len + 1):
+            if df['low'].iloc[i] > df['low'].iloc[i - j] or df['low'].iloc[i] > df['low'].iloc[i + j]:
+                is_pivot_low = False
+                break
+        
+        if is_pivot_low:
+            z_bottom = df['low'].iloc[i]
+            z_top = (df['high'].iloc[i] + df['low'].iloc[i]) / 2
+            # فحص هل المنطقة غير مختبرة (Unmitigated)
+            mitigated = False
+            for k in range(i + 1, n):
+                if df['low'].iloc[k] < z_bottom:
+                    mitigated = True
+                    break
+            if not mitigated:
+                bullish_obs.append({'top': z_top, 'bottom': z_bottom})
+
+        # فحص القمة المحورية (Bearish OB)
+        is_pivot_high = True
+        for j in range(1, pivot_len + 1):
+            if df['high'].iloc[i] < df['high'].iloc[i - j] or df['high'].iloc[i] < df['high'].iloc[i + j]:
+                is_pivot_high = False
+                break
+        
+        if is_pivot_high:
+            z_top = df['high'].iloc[i]
+            z_bottom = (df['high'].iloc[i] + df['low'].iloc[i]) / 2
+            mitigated = False
+            for k in range(i + 1, n):
+                if df['high'].iloc[k] > z_top:
+                    mitigated = True
+                    break
+            if not mitigated:
+                bearish_obs.append({'top': z_top, 'bottom': z_bottom})
+                
+    return bullish_obs, bearish_obs
 
 async def trading_loop():
-    print("=== Starting OB V6 Safe Worker ===", flush=True)
+    print("=== Starting OB V6 Exact Logic Worker ===", flush=True)
     
     token = (
         os.environ.get('METIAPI_TOKEN') or 
@@ -31,29 +76,25 @@ async def trading_loop():
         account = await metaapi.metatrader_account_api.get_account(account_id)
         
         if account.state != 'DEPLOYED':
-            print("Deploying account...", flush=True)
             await account.deploy()
             
-        print("Waiting for synchronization...", flush=True)
         connection = account.get_rpc_connection()
         await connection.connect()
         await connection.wait_synchronized()
         
         symbol = 'XAUUSD.m'
         volume = 0.01
-        num_orders = 3  # 3 صفقات لكل دخول بدقة
+        num_orders = 3  # 3 صفقات لكل دخول
         
-        # إعدادات النقاط الصحيحة للذهب
         point_size = 0.01
         tp1_points = 70   
         tp2_points = 100  
         tp3_points = 150  
         
-        print(f"Bot fully synchronized for {symbol}. Safe monitoring active...", flush=True)
+        print(f"Bot fully synchronized for {symbol}. Exact OB logic active...", flush=True)
         
         while True:
             try:
-                # مراقبة الصفقات المفتوحة لعدم تكرار الدخول
                 positions = await connection.get_positions()
                 group_positions = [p for p in positions if p.get('symbol') == symbol]
                 
@@ -61,22 +102,13 @@ async def trading_loop():
                     await asyncio.sleep(0.5)
                     continue
 
-                # جلب الشموع لتحليل مناطق Order Blocks
-                candles = await account.get_historical_candles(symbol, '3m', None, 40)
-                if not candles or len(candles) < 20:
+                candles = await account.get_historical_candles(symbol, '3m', None, 100)
+                if not candles or len(candles) < 30:
                     await asyncio.sleep(2)
                     continue
                 
                 df = pd.DataFrame(candles)
-                highs = df['high']
-                lows = df['low']
-                closes = df['close']
-                opens = df['open']
-                hl2 = (highs + lows) / 2
-                
-                pivot_len = 5
-                zone_bottom = lows.iloc[-pivot_len]
-                zone_resistance = highs.iloc[-pivot_len]
+                bull_obs, bear_obs = get_order_blocks(df, pivot_len=5)
                 
                 tick = await connection.get_symbol_price(symbol)
                 if not tick:
@@ -87,18 +119,30 @@ async def trading_loop():
                 ask = tick.get('ask', 0)
                 current_price = (bid + ask) / 2
                 
-                is_bullish = closes.iloc[-1] > opens.iloc[-1]
-                is_bearish = closes.iloc[-1] < opens.iloc[-1]
+                is_bullish_candle = df['close'].iloc[-1] > df['open'].iloc[-1]
+                is_bearish_candle = df['close'].iloc[-1] < df['open'].iloc[-1]
                 
-                touch_support = abs(current_price - zone_bottom) < 2.0
-                touch_resistance = abs(current_price - zone_resistance) < 2.0
+                # فحص هل السعر الحالي يلمس أي منطقة شراء (Bullish OB) غير مختبرة
+                triggered_buy = False
+                buy_zone_bottom = 0
+                for ob in bull_obs:
+                    if ob['bottom'] <= current_price <= ob['top'] + 1.0 and is_bullish_candle:
+                        triggered_buy = True
+                        buy_zone_bottom = ob['bottom']
+                        break
 
-                buy_signal = touch_support and is_bullish
-                sell_signal = touch_resistance and is_bearish
+                # فحص هل السعر الحالي يلمس أي منطقة بيع (Bearish OB) غير مختبرة
+                triggered_sell = False
+                sell_zone_top = 0
+                for ob in bear_obs:
+                    if ob['bottom'] - 1.0 <= current_price <= ob['top'] and is_bearish_candle:
+                        triggered_sell = True
+                        sell_zone_top = ob['top']
+                        break
 
-                if buy_signal:
-                    print(f"=== OB V6 BUY SIGNAL -> OPENING 3 ORDERS ===", flush=True)
-                    sl_price = round(zone_bottom - 0.20, 2)
+                if triggered_buy:
+                    print(f"=== OB V6 EXACT BUY SIGNAL -> OPENING 3 ORDERS ===", flush=True)
+                    sl_price = round(buy_zone_bottom - 0.20, 2)
                     
                     tp_prices = [
                         round(ask + (tp1_points * point_size), 2),
@@ -111,11 +155,11 @@ async def trading_loop():
                         for i in range(num_orders)
                     ]
                     await asyncio.gather(*buy_tasks, return_exceptions=True)
-                    await asyncio.sleep(15)
+                    await asyncio.sleep(20)
                     
-                elif sell_signal:
-                    print(f"=== OB V6 SELL SIGNAL -> OPENING 3 ORDERS ===", flush=True)
-                    sl_price = round(zone_resistance + 0.20, 2)
+                elif triggered_sell:
+                    print(f"=== OB V6 EXACT SELL SIGNAL -> OPENING 3 ORDERS ===", flush=True)
+                    sl_price = round(sell_zone_top + 0.20, 2)
                     
                     tp_prices = [
                         round(bid - (tp1_points * point_size), 2),
@@ -128,7 +172,7 @@ async def trading_loop():
                         for i in range(num_orders)
                     ]
                     await asyncio.gather(*sell_tasks, return_exceptions=True)
-                    await asyncio.sleep(15)
+                    await asyncio.sleep(20)
 
                 await asyncio.sleep(1)
 
